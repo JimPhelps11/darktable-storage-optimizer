@@ -45,7 +45,9 @@ class DarktableStorageOptimizer:
         if trash_folder:
             self.trash_folder = os.path.abspath(trash_folder)
         else:
-            self.trash_folder = os.path.join(self.root_dir, '.corbeille')
+            # Utilise une corbeille centralisée à la racine du dossier Images
+            images_root = self._find_images_root(self.root_dir)
+            self.trash_folder = os.path.join(images_root, '.corbeille')
 
         if not os.path.exists(self.root_dir):
             raise FileNotFoundError(f"Dossier non trouvé: {self.root_dir}")
@@ -55,6 +57,41 @@ class DarktableStorageOptimizer:
         self.ratings_cache = {}
         if not force_xmp:
             self._connect_to_database(db_path)
+
+    def _find_images_root(self, path: str) -> str:
+        """
+        Trouve la racine du dossier Images en remontant l'arborescence
+
+        Args:
+            path: Chemin de départ
+
+        Returns:
+            Chemin de la racine Images (ou le dossier parent si non trouvé)
+        """
+        current = os.path.abspath(path)
+
+        # Remonte jusqu'à trouver un dossier nommé "Images" ou atteindre /home/user
+        while current != os.path.dirname(current):  # Pas encore à la racine système
+            basename = os.path.basename(current)
+
+            # Si on trouve "Images", c'est notre racine
+            if basename == "Images":
+                return current
+
+            parent = os.path.dirname(current)
+
+            # Si on atteint /home/user, on s'arrête
+            if parent == os.path.expanduser("~"):
+                # Si le dossier courant contient "Images", on le retourne
+                if "Images" in current:
+                    return current
+                # Sinon on retourne le path original
+                return path
+
+            current = parent
+
+        # Si rien trouvé, retourne le path original
+        return path
 
     def _connect_to_database(self, db_path: str = None):
         """
