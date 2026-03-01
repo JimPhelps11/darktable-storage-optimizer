@@ -625,7 +625,7 @@ Exemples d'utilisation:
     )
     parser.add_argument(
         '--trash-folder',
-        help="Dossier corbeille personnalisé (défaut: .corbeille dans le dossier racine)"
+        help="Dossier corbeille personnalisé (défaut: corbeille centralisée à la racine Images)"
     )
     parser.add_argument(
         '--db-path',
