@@ -13,7 +13,9 @@ import sys
 import argparse
 import subprocess
 import shutil
+import sqlite3
 import xml.etree.ElementTree as ET
+import time
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime
@@ -23,7 +25,7 @@ class DarktableStorageOptimizer:
     """Optimise l'espace de stockage des photos darktable"""
 
     def __init__(self, root_dir: str, dry_run: bool = True, jpeg_quality: int = 95,
-                 trash_folder: str = None):
+                 trash_folder: str = None, db_path: str = None, force_xmp: bool = False):
         """
         Initialise l'optimiseur
 
@@ -32,10 +34,13 @@ class DarktableStorageOptimizer:
             dry_run: Si True, simule sans effectuer les modifications
             jpeg_quality: Qualité JPEG (1-100)
             trash_folder: Dossier corbeille (None = .corbeille dans root_dir)
+            db_path: Chemin vers la base darktable (None = auto-detect)
+            force_xmp: Force l'utilisation des XMP au lieu de la base
         """
         self.root_dir = os.path.abspath(root_dir)
         self.dry_run = dry_run
         self.jpeg_quality = jpeg_quality
+        self.force_xmp = force_xmp
 
         if trash_folder:
             self.trash_folder = os.path.abspath(trash_folder)
@@ -44,6 +49,105 @@ class DarktableStorageOptimizer:
 
         if not os.path.exists(self.root_dir):
             raise FileNotFoundError(f"Dossier non trouvé: {self.root_dir}")
+
+        # Connexion à la base de données darktable
+        self.db_conn = None
+        self.ratings_cache = {}
+        if not force_xmp:
+            self._connect_to_database(db_path)
+
+    def _connect_to_database(self, db_path: str = None):
+        """
+        Se connecte à la base de données darktable et charge les ratings
+
+        Args:
+            db_path: Chemin vers library.db (None = auto-detect)
+        """
+        if db_path is None:
+            # Cherche la base darktable dans les emplacements standards
+            possible_paths = [
+                os.path.expanduser('/home/steph/.var/app/org.darktable.Darktable/config/darktable/library.db'),
+                #os.path.expanduser('~/.config/darktable/library.db'),
+                #os.path.expanduser('~/Library/Application Support/darktable/library.db'),  # macOS
+            ]
+            for path in possible_paths:
+                if os.path.exists(path):
+                    db_path = path
+                    break
+
+        if db_path and os.path.exists(db_path):
+            try:
+                self.db_conn = sqlite3.connect(db_path)
+                self._load_ratings_from_database()
+                print(f"✓ Base de données darktable trouvée: {db_path}")
+                print(f"  → {len(self.ratings_cache)} rating(s) chargé(s)")
+            except sqlite3.Error as e:
+                print(f"⚠️  Erreur connexion base darktable: {e}")
+                print(f"  → Utilisation des fichiers XMP en fallback")
+                self.db_conn = None
+        else:
+            print(f"⚠️  Base darktable non trouvée")
+            print(f"  → Utilisation des fichiers XMP uniquement")
+
+    def _load_ratings_from_database(self):
+        """
+        Charge tous les ratings depuis la base de données darktable
+        """
+        if not self.db_conn:
+            return
+
+        try:
+            cursor = self.db_conn.cursor()
+
+            # Trouve tous les film_rolls dans le dossier root_dir et ses sous-dossiers
+            cursor.execute("""
+                SELECT id, folder
+                FROM main.film_rolls
+                WHERE folder LIKE ?
+            """, (f"{self.root_dir}%",))
+
+            film_rolls = cursor.fetchall()
+
+            if not film_rolls:
+                print(f"  ⚠️  Aucun film_roll trouvé pour {self.root_dir}")
+                return
+
+            # Pour chaque film_roll, récupère les images et leurs ratings
+            for film_id, folder in film_rolls:
+                cursor.execute("""
+                    SELECT filename, flags
+                    FROM main.images
+                    WHERE film_id = ?
+                """, (film_id,))
+
+                for filename, flags in cursor.fetchall():
+                    # Le rating est dans les 3 premiers bits de flags
+                    rating = flags & 7 if flags else 0
+
+                    # Crée la clé pour le cache (chemin complet)
+                    full_path = os.path.join(folder, filename)
+                    self.ratings_cache[full_path] = rating
+
+        except sqlite3.Error as e:
+            print(f"  ⚠️  Erreur lecture base: {e}")
+
+    def get_rating(self, nef_path: str, xmp_path: str) -> Optional[int]:
+        """
+        Récupère le rating d'une photo (base darktable ou XMP)
+
+        Args:
+            nef_path: Chemin du fichier NEF
+            xmp_path: Chemin du fichier XMP
+
+        Returns:
+            Rating (0-5) ou None si non trouvé
+        """
+        # Méthode 1: Base de données darktable (priorité)
+        if self.db_conn and nef_path in self.ratings_cache:
+            return self.ratings_cache[nef_path]
+
+        # Méthode 2: Fichier XMP (fallback)
+        return self.read_rating_from_xmp(xmp_path)
 
     def read_rating_from_xmp(self, xmp_path: str) -> Optional[int]:
         """
@@ -121,16 +225,17 @@ class DarktableStorageOptimizer:
                     nef_path = os.path.join(root, filename)
                     xmp_path = nef_path + '.xmp'
 
-                    # Lit le rating depuis le XMP
-                    rating = self.read_rating_from_xmp(xmp_path)
+                    # Lit le rating (base darktable ou XMP)
+                    rating = self.get_rating(nef_path, xmp_path)
 
                     if rating is None:
-                        # Pas de XMP = considère comme 0 étoiles
+                        # Pas de rating trouvé = considère comme 0 étoiles
                         rating = 0
                         has_xmp = False
                     else:
-                        has_xmp = True
-                        xmp_count += 1
+                        has_xmp = os.path.exists(xmp_path)
+                        if has_xmp:
+                            xmp_count += 1
 
                     photos.append({
                         'filename': filename,
@@ -172,24 +277,17 @@ class DarktableStorageOptimizer:
             True si la conversion a réussi
         """
         try:
-            # Essaie d'abord avec darktable-cli (meilleure qualité)
-            if xmp_path and os.path.exists(xmp_path):
-                # darktable-cli utilise automatiquement le XMP s'il est à côté du NEF
-                cmd = [
-                    'darktable-cli',
-                    nef_path,
-                    jpeg_path,
-                    '--core',
-                    '--conf', f'plugins/imageio/format/jpeg/quality={self.jpeg_quality}'
-                ]
-            else:
-                cmd = [
-                    'darktable-cli',
-                    nef_path,
-                    jpeg_path,
-                    '--core',
-                    '--conf', f'plugins/imageio/format/jpeg/quality={self.jpeg_quality}'
-                ]
+            # Utilise darktable-cli depuis flatpak (même version que darktable GUI)
+            # Ceci garantit la compatibilité avec les XMP générés par darktable 5.0
+            cmd = [
+                'flatpak', 'run',
+                '--command=darktable-cli',
+                'org.darktable.Darktable',
+                nef_path,
+                jpeg_path,
+                '--core',
+                '--conf', f'plugins/imageio/format/jpeg/quality={self.jpeg_quality}'
+            ]
 
             result = subprocess.run(
                 cmd,
@@ -205,7 +303,8 @@ class DarktableStorageOptimizer:
                 return self._convert_with_alternative(nef_path, jpeg_path)
 
         except FileNotFoundError:
-            # darktable-cli pas installé, utilise alternative
+            # flatpak ou darktable pas installé, utilise alternative
+            print(f"    ⚠️  Flatpak darktable non trouvé, tentative avec alternative...")
             return self._convert_with_alternative(nef_path, jpeg_path)
         except subprocess.TimeoutExpired:
             print(f"    ⏱️  Timeout lors de la conversion")
@@ -265,12 +364,12 @@ class DarktableStorageOptimizer:
             print(f"    ❌ Erreur déplacement vers corbeille: {e}")
             return False
 
-    def process_photos(self) -> Tuple[int, int, int]:
+    def process_photos(self) -> Tuple[int, int, int, Dict]:
         """
         Traite toutes les photos sans étoiles
 
         Returns:
-            Tuple (nombre traité, espace économisé en bytes, nombre d'erreurs)
+            Tuple (nombre traité, espace économisé en bytes, nombre d'erreurs, stats de performance)
         """
         all_photos = self.find_nef_files()
         photos_no_stars = self.filter_photos_without_stars(all_photos)
@@ -283,7 +382,7 @@ class DarktableStorageOptimizer:
 
         if not photos_no_stars:
             print("\n✅ Aucune photo sans étoiles à traiter.")
-            return 0, 0, 0
+            return 0, 0, 0, {}
 
         print(f"\n{'='*70}")
         print(f"Mode: {'🔍 SIMULATION' if self.dry_run else '⚠️  RÉEL'}")
@@ -292,6 +391,11 @@ class DarktableStorageOptimizer:
         processed = 0
         space_saved = 0
         errors = 0
+
+        # Métriques de performance
+        start_time = time.time()
+        conversion_time = 0.0
+        file_ops_time = 0.0
 
         for i, photo in enumerate(photos_no_stars, 1):
             rel_path = os.path.relpath(photo['folder'], self.root_dir)
@@ -311,10 +415,13 @@ class DarktableStorageOptimizer:
                     jpeg_size = int(photo['size'] * 0.12)
                 else:
                     print(f"  → Conversion en JPEG...")
+                    conv_start = time.time()
                     if not self.convert_to_jpeg(photo['nef_path'], jpeg_path, photo['xmp_path']):
                         print(f"  ❌ ERREUR: Échec de conversion")
                         errors += 1
                         continue
+                    conv_end = time.time()
+                    conversion_time += (conv_end - conv_start)
 
                     # Vérifie que le JPEG a bien été créé
                     if not os.path.exists(jpeg_path):
@@ -340,12 +447,15 @@ class DarktableStorageOptimizer:
                 print(f"  → Déplacerait {len(files_to_trash)} fichier(s) vers corbeille")
                 print(f"  💾 Économie: {self._format_size(saved)}")
             else:
+                file_start = time.time()
                 success = True
                 for file_path in files_to_trash:
                     if not self.move_to_trash(file_path):
                         success = False
                         errors += 1
                         break
+                file_end = time.time()
+                file_ops_time += (file_end - file_start)
 
                 if success:
                     print(f"  ✓ {len(files_to_trash)} fichier(s) déplacé(s) vers corbeille")
@@ -357,7 +467,18 @@ class DarktableStorageOptimizer:
             space_saved += saved
             processed += 1
 
-        return processed, space_saved, errors
+        end_time = time.time()
+        total_time = end_time - start_time
+
+        # Stats de performance
+        perf_stats = {
+            'total_time': total_time,
+            'conversion_time': conversion_time,
+            'file_ops_time': file_ops_time,
+            'avg_time_per_photo': total_time / processed if processed > 0 else 0
+        }
+
+        return processed, space_saved, errors, perf_stats
 
     @staticmethod
     def _format_size(bytes: int) -> str:
@@ -368,6 +489,25 @@ class DarktableStorageOptimizer:
             bytes /= 1024.0
         return f"{bytes:.2f} To"
 
+    @staticmethod
+    def _format_time(seconds: float) -> str:
+        """Formate un temps en secondes de manière lisible"""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            minutes = int(seconds // 60)
+            secs = seconds % 60
+            return f"{minutes}m {secs:.0f}s"
+        else:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours}h {minutes}m"
+
+    def __del__(self):
+        """Ferme proprement la connexion à la base de données"""
+        if self.db_conn:
+            self.db_conn.close()
+
     def run(self):
         """Exécute l'optimisation"""
         print("=" * 70)
@@ -376,10 +516,11 @@ class DarktableStorageOptimizer:
         print(f"Dossier racine: {self.root_dir}")
         print(f"Dossier corbeille: {self.trash_folder}")
         print(f"Qualité JPEG: {self.jpeg_quality}")
+        print(f"Source ratings: {'📁 Base darktable' if self.db_conn else '📄 Fichiers XMP'}")
         print(f"Mode: {'🔍 SIMULATION (dry-run)' if self.dry_run else '⚠️  RÉEL'}")
         print("=" * 70)
 
-        processed, space_saved, errors = self.process_photos()
+        processed, space_saved, errors, perf_stats = self.process_photos()
 
         print("\n" + "=" * 70)
         print("📊 RÉSUMÉ")
@@ -392,6 +533,15 @@ class DarktableStorageOptimizer:
             print("\n💡 Pour exécuter réellement, utilisez --execute")
         else:
             print(f"💾 Espace économisé: {self._format_size(space_saved)}")
+
+            # Métriques de performance
+            if perf_stats and processed > 0:
+                print(f"\n⏱️  Performance:")
+                print(f"  Temps total: {self._format_time(perf_stats['total_time'])}")
+                print(f"  Temps de conversion: {self._format_time(perf_stats['conversion_time'])}")
+                print(f"  Temps opérations fichiers: {self._format_time(perf_stats['file_ops_time'])}")
+                print(f"  Moyenne par photo: {self._format_time(perf_stats['avg_time_per_photo'])}")
+
             print(f"\n📁 Fichiers déplacés dans: {self.trash_folder}")
             print("💡 Vous pouvez récupérer les fichiers depuis la corbeille si nécessaire")
 
@@ -440,11 +590,25 @@ Exemples d'utilisation:
         '--trash-folder',
         help="Dossier corbeille personnalisé (défaut: .corbeille dans le dossier racine)"
     )
+    parser.add_argument(
+        '--db-path',
+        help="Chemin vers library.db darktable (défaut: auto-détection)"
+    )
+    parser.add_argument(
+        '--force-xmp',
+        action='store_true',
+        help="Force l'utilisation des fichiers XMP (ignore la base darktable)"
+    )
+    parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help="Ne demande pas de confirmation (mode automatique)"
+    )
 
     args = parser.parse_args()
 
     # Confirmation pour mode réel
-    if args.execute:
+    if args.execute and not args.yes:
         print("\n⚠️  MODE RÉEL: Les fichiers NEF/XMP seront déplacés vers la corbeille!")
         print(f"📁 Dossier à traiter: {args.directory}")
         response = input("\nÊtes-vous sûr de vouloir continuer? (oui/non): ")
@@ -457,7 +621,9 @@ Exemples d'utilisation:
             root_dir=args.directory,
             dry_run=not args.execute,
             jpeg_quality=args.jpeg_quality,
-            trash_folder=args.trash_folder
+            trash_folder=args.trash_folder,
+            db_path=args.db_path,
+            force_xmp=args.force_xmp
         )
         optimizer.run()
     except KeyboardInterrupt:
