@@ -168,16 +168,65 @@ L'outil lit les ratings de deux manières (par ordre de priorité) :
 - Fichiers déplacés vers `.corbeille` (pas supprimés)
 - Structure de dossiers préservée dans la corbeille
 
-## Récupération depuis la corbeille
+## Gestion de la corbeille
+
+### Corbeille centralisée
+
+L'outil utilise automatiquement une **corbeille centralisée** à la racine de votre dossier Images :
+
+```
+/home/steph/Images/.corbeille/
+├── 2024/
+│   ├── 08-Aout/
+│   │   └── 04 Aout Anniv Emmy/
+│   │       ├── _STE7221.NEF
+│   │       └── _STE7221.NEF.xmp
+│   └── 09-Septembre/...
+└── 2026/...
+```
+
+**Avantages :**
+- Un seul endroit pour gérer tous les fichiers supprimés
+- Facile de faire le ménage
+- L'arborescence complète est préservée
+- Restauration simple et précise
+
+### Nettoyage de la corbeille
+
+Utilisez le script `clean_trash.sh` :
+
+```bash
+# Mode interactif (recommandé)
+./clean_trash.sh
+
+# Simulation (voir ce qui serait supprimé)
+./clean_trash.sh --dry-run
+
+# Suppression automatique sans confirmation
+./clean_trash.sh --auto
+
+# Supprime uniquement les fichiers de plus de 30 jours
+./clean_trash.sh --older-than=30
+```
+
+### Migration des anciennes corbeilles
+
+Si vous aviez des corbeilles locales (tests précédents), migrez-les :
+
+```bash
+./migrate_trash.sh
+```
+
+### Récupération depuis la corbeille
 
 Si vous voulez annuler une opération :
 
 ```bash
-# Restaure tous les fichiers d'un dossier
-cp -r /chemin/vers/photos/.corbeille/* /chemin/vers/photos/
+# Restaure tous les fichiers d'un dossier spécifique
+cp -r /home/steph/Images/.corbeille/2024/08-Aout/* /home/steph/Images/2024/08-Aout/
 
-# Supprime les JPEG créés
-find /chemin/vers/photos -name "*.jpg" -delete
+# Supprime les JPEG créés dans ce dossier
+find /home/steph/Images/2024/08-Aout -name "*.jpg" -delete
 ```
 
 ## Limitations
