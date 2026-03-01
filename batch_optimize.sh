@@ -276,7 +276,7 @@ for folder in "${selected_folders[@]}"; do
     echo "-------------------------------------------------------------------"
 
     # Lance le traitement réel
-    if echo "oui" | python3 "$OPTIMIZER_SCRIPT" "$folder" --execute 2>&1 | tee "$TEMP_DIR/log_$processed_folders.txt"; then
+    if python3 "$OPTIMIZER_SCRIPT" "$folder" --execute --yes 2>&1 | tee "$TEMP_DIR/log_$processed_folders.txt"; then
         # Extrait les stats du traitement
         photos=$(grep -oP 'Photos traitées:\s*\K\d+' "$TEMP_DIR/log_$processed_folders.txt" || echo "0")
         errors=$(grep -oP 'Erreurs:\s*\K\d+' "$TEMP_DIR/log_$processed_folders.txt" || echo "0")
