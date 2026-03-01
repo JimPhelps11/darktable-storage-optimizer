@@ -114,10 +114,15 @@ class DarktableStorageOptimizer:
 
         if db_path and os.path.exists(db_path):
             try:
-                self.db_conn = sqlite3.connect(db_path)
+                # Ouvre en mode read-only avec URI pour éviter les verrous
+                db_uri = f"file:{db_path}?mode=ro"
+                self.db_conn = sqlite3.connect(db_uri, uri=True)
                 self._load_ratings_from_database()
                 print(f"✓ Base de données darktable trouvée: {db_path}")
                 print(f"  → {len(self.ratings_cache)} rating(s) chargé(s)")
+                # Ferme immédiatement la connexion après lecture
+                self.db_conn.close()
+                self.db_conn = None
             except sqlite3.Error as e:
                 print(f"⚠️  Erreur connexion base darktable: {e}")
                 print(f"  → Utilisation des fichiers XMP en fallback")
@@ -548,15 +553,42 @@ class DarktableStorageOptimizer:
         if self.db_conn:
             self.db_conn.close()
 
+    def _check_darktable_running(self):
+        """Vérifie si darktable est en cours d'exécution et avertit l'utilisateur"""
+        try:
+            result = subprocess.run(['pgrep', '-f', 'darktable'], capture_output=True)
+            if result.returncode == 0:
+                print("")
+                print("⚠️" * 35)
+                print("⚠️  ATTENTION: darktable est actuellement en cours d'exécution!")
+                print("⚠️")
+                print("⚠️  Recommandations:")
+                print("⚠️  1. Fermez darktable pour éviter les conflits")
+                print("⚠️  2. Ou utilisez uniquement le mode --force-xmp")
+                print("⚠️")
+                print("⚠️  Les ratings seront lus depuis le cache, mais si vous")
+                print("⚠️  avez modifié des étoiles dans darktable, elles ne")
+                print("⚠️  seront PAS prises en compte!")
+                print("⚠️" * 35)
+                print("")
+                if not self.dry_run:
+                    import time
+                    time.sleep(3)  # Pause pour que l'utilisateur voie l'avertissement
+        except:
+            pass  # Si pgrep n'existe pas, on continue sans warning
+
     def run(self):
         """Exécute l'optimisation"""
+        # Vérifie si darktable est en cours d'exécution
+        self._check_darktable_running()
+
         print("=" * 70)
         print("📸 Darktable Storage Optimizer pour Google Drive")
         print("=" * 70)
         print(f"Dossier racine: {self.root_dir}")
         print(f"Dossier corbeille: {self.trash_folder}")
         print(f"Qualité JPEG: {self.jpeg_quality}")
-        print(f"Source ratings: {'📁 Base darktable' if self.db_conn else '📄 Fichiers XMP'}")
+        print(f"Source ratings: {'📁 Base darktable' if len(self.ratings_cache) > 0 else '📄 Fichiers XMP'}")
         print(f"Mode: {'🔍 SIMULATION (dry-run)' if self.dry_run else '⚠️  RÉEL'}")
         print("=" * 70)
 
