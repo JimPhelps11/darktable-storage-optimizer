@@ -383,8 +383,11 @@ class DarktableStorageOptimizer:
             True si le déplacement a réussi
         """
         try:
-            # Calcule le chemin relatif depuis root_dir
-            rel_path = os.path.relpath(file_path, self.root_dir)
+            # Trouve la racine Images (parent de .corbeille)
+            images_root = os.path.dirname(self.trash_folder)
+
+            # Calcule le chemin relatif depuis la racine Images
+            rel_path = os.path.relpath(file_path, images_root)
 
             # Crée le chemin de destination dans la corbeille
             trash_path = os.path.join(self.trash_folder, rel_path)
