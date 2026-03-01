@@ -1,97 +1,68 @@
-# Darktable Storage Optimizer pour Google Drive
+# Darktable Storage Optimizer
 
-Optimisez l'espace de stockage de vos photos darktable sur Google Drive en convertissant automatiquement les fichiers RAW (.NEF) sans étoiles en JPEG haute qualité.
+Optimise l'espace de stockage pour les photos darktable en convertissant automatiquement les photos sans étoiles en JPEG haute qualité, tout en conservant les photos importantes en RAW.
 
-## Fonctionnalités
+## Problème
 
-- Lit les ratings (étoiles) directement depuis les fichiers XMP de darktable
-- Conserve tous les fichiers .NEF des photos avec étoiles (⭐)
-- Convertit les photos sans étoiles en JPEG haute qualité
-- Applique automatiquement les retouches darktable lors de la conversion
-- Déplace les fichiers NEF/XMP vers une corbeille (sécurité maximale)
-- Mode simulation (dry-run) par défaut
-- Statistiques détaillées sur l'espace économisé
+Les photographes utilisant darktable accumulent des centaines de gigaoctets de fichiers RAW (.NEF), mais seulement une fraction de ces photos méritent d'être conservées en RAW. La synchronisation avec Google Drive devient coûteuse en stockage.
 
-## Prérequis
+## Solution
 
-### Python 3
-Le script nécessite Python 3.6 ou supérieur.
+Cet outil automatise le processus :
+- ✅ Lit les ratings depuis la base de données darktable
+- ⭐ **Conserve** les photos avec étoiles en RAW (haute qualité)
+- 📸 **Convertit** les photos sans étoiles en JPEG 95% (économie d'espace)
+- 🎨 Préserve tous les développements darktable (balance des blancs, exposition, etc.)
+- 🗑️ Déplace les fichiers originaux dans `.corbeille` (sécurité)
+- ⏱️ Métriques de performance détaillées
 
-### Outils de conversion (au moins un)
+## Résultats réels
 
-**Option 1 : darktable-cli (recommandé)**
-```bash
-# Debian/Ubuntu
-sudo apt install darktable
+**Année 2024 :**
+- 8,588 photos NEF analysées
+- 1,002 photos avec étoiles conservées en RAW
+- 7,586 photos converties en JPEG
+- **353 Go économisés** 💾
 
-# Fedora
-sudo dnf install darktable
-
-# macOS
-brew install darktable
-```
-
-**Option 2 : ImageMagick (alternative)**
-```bash
-# Debian/Ubuntu
-sudo apt install imagemagick
-
-# Fedora
-sudo dnf install ImageMagick
-
-# macOS
-brew install imagemagick
-```
+**Année 2026 (tests) :**
+- 91 photos converties
+- 2.46 Go économisés
+- 0 erreur
+- Qualité JPEG préservée avec tous les développements
 
 ## Installation
 
-```bash
-# Clonez ou téléchargez le script
-git clone <url> darktable_storage_optimizer
-cd darktable_storage_optimizer
+### Prérequis
 
-# Rendez le script exécutable
-chmod +x darktable_storage_optimizer.py
+- Python 3.6+
+- Darktable installé via Flatpak
+- Fichiers XMP exportés depuis darktable (pour appliquer les développements)
+
+### Installation des dépendances
+
+```bash
+# Darktable via Flatpak (recommandé)
+flatpak install flathub org.darktable.Darktable
+
+# Le script utilise uniquement des modules Python standard
 ```
 
 ## Utilisation
 
-### Simulation (recommandé pour le premier essai)
+### Mode simulation (dry-run)
+
+Analyse sans modifier les fichiers :
 
 ```bash
-# Simule les opérations sans modifier les fichiers
-python3 darktable_storage_optimizer.py /chemin/vers/vos/photos
+python3 darktable_storage_optimizer.py /chemin/vers/photos
 ```
 
-Exemple de sortie:
-```
-======================================================================
-📸 Darktable Storage Optimizer pour Google Drive
-======================================================================
-Dossier racine: /home/user/Google Drive/Photos
-Dossier corbeille: /home/user/Google Drive/Photos/.corbeille
-Qualité JPEG: 95
-Mode: 🔍 SIMULATION (dry-run)
-======================================================================
+### Mode réel
 
-Scan du dossier: /home/user/Google Drive/Photos
-  Trouvé 245 fichier(s) NEF
-  Trouvé 187 fichier(s) XMP associé(s)
-
-📊 Statistiques:
-  Photos avec étoiles (⭐): 48 (conservées en NEF)
-  Photos sans étoiles: 197 (à traiter)
-
-...
-
-💾 Espace qui serait économisé: 8.45 Go
-```
-
-### Exécution réelle
+Convertit et déplace réellement les fichiers :
 
 ```bash
-# Exécute les conversions et déplacements
-python3 darktable_storage_optimizer.py /chemin/vers/vos/photos --execute
+python3 darktable_storage_optimizer.py /chemin/vers/photos --execute
 ```
 
 ### Options avancées
@@ -100,157 +71,141 @@ python3 darktable_storage_optimizer.py /chemin/vers/vos/photos --execute
 # Qualité JPEG personnalisée (80-100)
 python3 darktable_storage_optimizer.py /chemin/vers/photos --execute --jpeg-quality 90
 
+# Mode automatique sans confirmation
+python3 darktable_storage_optimizer.py /chemin/vers/photos --execute --yes
+
 # Dossier corbeille personnalisé
 python3 darktable_storage_optimizer.py /chemin/vers/photos --execute --trash-folder /backup/corbeille
 
-# Afficher l'aide
-python3 darktable_storage_optimizer.py --help
+# Forcer l'utilisation des XMP au lieu de la base darktable
+python3 darktable_storage_optimizer.py /chemin/vers/photos --execute --force-xmp
 ```
 
-## Workflow recommandé pour Google Drive
+### Traitement par lots
 
-### 1. Première exécution (simulation)
+Le script `batch_optimize.sh` permet de traiter plusieurs dossiers interactivement :
 
 ```bash
-# Test sur un sous-dossier d'abord
-python3 darktable_storage_optimizer.py ~/GoogleDrive/Photos/2024
+# Simulation sur tous les dossiers de 2024
+./batch_optimize.sh /home/user/Images/2024 --dry-run
+
+# Traitement interactif
+./batch_optimize.sh /home/user/Images/2024
 ```
 
-Vérifiez les statistiques affichées.
+## Exemple de sortie
 
-### 2. Exécution réelle
+```
+======================================================================
+📸 Darktable Storage Optimizer pour Google Drive
+======================================================================
+Dossier racine: /home/steph/Images/2026/02 -Février/07- Match Volley Puylaurens
+Qualité JPEG: 95
+Source ratings: 📁 Base darktable
+Mode: ⚠️  RÉEL
+======================================================================
+
+Scan du dossier...
+  Trouvé 143 fichier(s) NEF
+  Trouvé 143 fichier(s) XMP associé(s)
+
+📊 Statistiques:
+  Photos avec étoiles (⭐): 76 (conservées en NEF)
+  Photos sans étoiles: 67 (à traiter)
+
+[1/67] ./_STE7417.NEF
+  → Conversion en JPEG...
+  ✓ JPEG créé (23.97 Mo)
+  ✓ 2 fichier(s) déplacé(s) vers corbeille
+  💾 Économie: 29.28 Mo
+
+... [66 autres photos] ...
+
+======================================================================
+📊 RÉSUMÉ
+======================================================================
+Photos traitées: 67
+Erreurs: 0
+💾 Espace économisé: 2.10 Go
+
+⏱️  Performance:
+  Temps total: 5m 23s
+  Temps de conversion: 4m 51s
+  Temps opérations fichiers: 12.3s
+  Moyenne par photo: 4.8s
+
+📁 Fichiers déplacés dans: .corbeille
+💡 Vous pouvez récupérer les fichiers depuis la corbeille si nécessaire
+======================================================================
+```
+
+## Fonctionnement technique
+
+### Lecture des ratings
+
+L'outil lit les ratings de deux manières (par ordre de priorité) :
+
+1. **Base de données darktable** (plus rapide) :
+   - Lit directement depuis `library.db`
+   - Cache tous les ratings en mémoire
+   - Fonctionne avec darktable Flatpak
+
+2. **Fichiers XMP** (fallback) :
+   - Parse les fichiers `.xmp` individuellement
+   - Lit le tag `xmp:Rating`
+
+### Conversion JPEG
+
+- Utilise `flatpak run --command=darktable-cli org.darktable.Darktable`
+- Garantit la compatibilité avec darktable 5.0
+- Applique automatiquement les développements depuis les XMP
+- Qualité JPEG par défaut : 95%
+
+### Sécurité
+
+- Mode simulation par défaut
+- Confirmation avant exécution réelle
+- Fichiers déplacés vers `.corbeille` (pas supprimés)
+- Structure de dossiers préservée dans la corbeille
+
+## Récupération depuis la corbeille
+
+Si vous voulez annuler une opération :
 
 ```bash
-# Exécutez sur le dossier de test
-python3 darktable_storage_optimizer.py ~/GoogleDrive/Photos/2024 --execute
+# Restaure tous les fichiers d'un dossier
+cp -r /chemin/vers/photos/.corbeille/* /chemin/vers/photos/
+
+# Supprime les JPEG créés
+find /chemin/vers/photos -name "*.jpg" -delete
 ```
 
-### 3. Vérification
+## Limitations
 
-- Vérifiez que les JPEG sont corrects
-- Les fichiers NEF/XMP sont dans `.corbeille`
-- Google Drive synchronise les changements
+- **IMPORTANT** : Exporter les XMP depuis darktable AVANT de lancer l'outil
+- Nécessite darktable installé (pour darktable-cli)
+- Fonctionne uniquement avec les fichiers .NEF (Nikon)
+- Les fichiers sans XMP ni rating dans la base sont considérés comme 0 étoile
 
-### 4. Nettoyage de la corbeille
+## Export des XMP depuis darktable
 
-Une fois satisfait (après quelques jours) :
+Dans darktable :
+1. Sélectionnez toutes les photos (Ctrl+A)
+2. Menu : `Fichier` → `Exporter` → `Exporter les sidecars`
+3. Ou : Table lumineuse → Bouton droit → `Écrire les fichiers sidecar`
 
-```bash
-# Supprimez définitivement la corbeille
-rm -rf ~/GoogleDrive/Photos/.corbeille
-```
+## Contribution
 
-### 5. Exécution sur toute la bibliothèque
-
-```bash
-# Appliquez à tous vos dossiers
-python3 darktable_storage_optimizer.py ~/GoogleDrive/Photos --execute
-```
-
-## Comment ça marche ?
-
-1. **Scan** : Le script parcourt tous les fichiers .NEF du dossier
-2. **Lecture XMP** : Pour chaque NEF, il lit le fichier XMP associé pour trouver le rating
-3. **Filtrage** : Sépare les photos avec étoiles (conservées) et sans étoiles (à traiter)
-4. **Conversion** : Pour les photos sans étoiles :
-   - Convertit en JPEG avec darktable-cli (applique les retouches XMP)
-   - Ou utilise ImageMagick si darktable-cli n'est pas disponible
-5. **Sécurité** : Vérifie que le JPEG est créé avant de déplacer les originaux
-6. **Corbeille** : Déplace NEF + XMP vers `.corbeille` en préservant la structure
-
-## Structure de la corbeille
-
-La corbeille préserve l'arborescence originale :
-
-```
-Photos/
-├── 2024/
-│   ├── Janvier/
-│   │   ├── IMG_001.jpg      (nouveau JPEG)
-│   │   └── IMG_002.NEF      (photo avec étoiles, conservée)
-│   └── .corbeille/
-│       └── Janvier/
-│           ├── IMG_001.NEF  (déplacé)
-│           └── IMG_001.NEF.xmp (déplacé)
-```
-
-## Sécurité
-
-Le script est conçu avec la sécurité maximale :
-
-- **Dry-run par défaut** : Aucune modification sans `--execute`
-- **Corbeille** : Fichiers déplacés, pas supprimés
-- **Vérifications** : Le JPEG doit être créé avant déplacement du NEF
-- **Conservation structure** : Arborescence préservée dans la corbeille
-- **Confirmation** : Demande de confirmation en mode réel
-
-## Restauration
-
-Pour restaurer un fichier depuis la corbeille :
-
-```bash
-# Retrouvez le fichier
-find .corbeille -name "IMG_001.NEF"
-
-# Déplacez-le vers son emplacement original
-mv .corbeille/2024/Janvier/IMG_001.NEF 2024/Janvier/
-mv .corbeille/2024/Janvier/IMG_001.NEF.xmp 2024/Janvier/
-```
-
-## FAQ
-
-### Le script va-t-il modifier mes photos avec étoiles ?
-Non, jamais. Les photos avec étoiles (rating > 0 dans XMP) sont complètement ignorées.
-
-### Et si une photo n'a pas de fichier XMP ?
-Elle sera considérée comme ayant 0 étoiles et donc traitée (convertie en JPEG).
-
-### Quelle est la différence de taille ?
-En moyenne, un JPEG haute qualité (95) représente 10-15% de la taille du NEF original.
-Pour 100 Go de NEF, vous économiserez environ 85-90 Go.
-
-### Puis-je annuler après avoir exécuté ?
-Oui ! Tous les fichiers sont dans `.corbeille`. Vous pouvez les restaurer manuellement ou simplement ne pas supprimer la corbeille.
-
-### Le script fonctionne-t-il avec d'autres formats RAW ?
-Actuellement, seul .NEF est supporté. Pour CR2, ARW, etc., modifiez la ligne 123 :
-```python
-if filename.upper().endswith(('.NEF', '.CR2', '.ARW')):
-```
-
-### Que faire si darktable-cli et ImageMagick ne sont pas installés ?
-Installez au moins un des deux (voir section Prérequis). darktable-cli est recommandé car il applique correctement les retouches XMP.
-
-## Dépannage
-
-### "Base de données darktable non trouvée"
-Ce message n'apparaît plus avec cette version. Le script lit directement les XMP.
-
-### "Erreur lecture XMP"
-Le fichier XMP peut être corrompu. La photo sera traitée comme ayant 0 étoiles.
-
-### "Timeout lors de la conversion"
-La conversion d'un RAW peut prendre du temps. Le timeout est fixé à 120s par photo.
-
-## Statistiques
-
-Après exécution, le script affiche :
-- Nombre de photos avec/sans étoiles
-- Nombre de photos traitées
-- Espace économisé
-- Nombre d'erreurs éventuelles
+Les contributions sont les bienvenues ! N'hésitez pas à ouvrir une issue ou une pull request.
 
 ## Licence
 
-MIT License - Utilisez librement
+MIT License - Libre d'utilisation et de modification
 
-## Contribuer
+## Auteur
 
-Améliorations bienvenues :
-- Support d'autres formats RAW
-- Interface graphique
-- Intégration avec d'autres gestionnaires de photos
+Créé avec l'aide de Claude Code pour optimiser le stockage photo sur Google Drive.
 
-## Avertissement
+---
 
-Bien que le script soit conçu avec sécurité maximale (corbeille), faites toujours une sauvegarde avant de traiter une grande bibliothèque de photos !
+**⚠️  Rappel** : Testez d'abord sur un petit dossier, vérifiez la qualité des JPEG, puis traitez l'ensemble de votre bibliothèque.
